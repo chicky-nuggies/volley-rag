@@ -1,13 +1,9 @@
-from pathlib import Path
-
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.rag import format_sources_for_tool, hybrid_search
 
-
-CHECKPOINT_DB_PATH = Path("checkpoints/langgraph.sqlite")
 
 SYSTEM_PROMPT = """You are a volleyball rules assistant.
 
@@ -30,7 +26,6 @@ def search_volleyball_rules(query: str) -> str:
 
 
 async def setup_checkpointer(checkpointer: AsyncSqliteSaver) -> None:
-    CHECKPOINT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     await checkpointer.setup()
 
 

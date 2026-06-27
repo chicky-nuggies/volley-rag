@@ -1,13 +1,17 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 import uuid
 
 from fastapi import FastAPI
 from starlette.concurrency import run_in_threadpool
 
-from app.agent import CHECKPOINT_DB_PATH, build_agent, setup_checkpointer
+from app.agent import build_agent, setup_checkpointer
 from app.rag import hybrid_search
 from app.schemas import ChatRequest, ChatResponse
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+
+CHECKPOINT_DB_PATH = Path("checkpoints/langgraph.sqlite")
 
 
 def extract_answer(agent_result: dict) -> str:
