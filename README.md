@@ -29,6 +29,14 @@ curl -X POST http://127.0.0.1:8000/chat \
   -d '{"message": "How many contacts does a team have to return the ball?"}'
 ```
 
+Retrieve chunks without calling the LLM:
+
+```bash
+curl -X POST http://127.0.0.1:8000/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"query": "team hits returning ball", "limit": 3}'
+```
+
 The chat endpoint expects:
 
 - Ollama running locally with `gemma4:e2b` and `qwen3-embedding:0.6b`.
@@ -49,10 +57,15 @@ In another terminal, start Gradio:
 uv run python gradio_app.py
 ```
 
+The Gradio UI has two tabs:
+
+- `Chat`: asks the LLM and shows sources.
+- `Retrieve Chunks`: embeds the query and returns matching chunks directly.
+
 By default, Gradio calls:
 
 ```text
-http://127.0.0.1:8000/chat
+http://127.0.0.1:8000
 ```
 
-Override it with `VOLLEY_RAG_CHAT_API_URL` if needed.
+Override it with `VOLLEY_RAG_API_BASE_URL` if needed.

@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from fastembed import SparseTextEmbedding
 from qdrant_client import QdrantClient, models
 
-from app.schemas import Source
+from app.schemas import RetrievedChunk, Source
 
 
 load_dotenv()
@@ -56,8 +56,8 @@ def embed_sparse_query(text: str) -> models.SparseVector:
     return to_sparse_vector(sparse_embedding)
 
 
-def hybrid_search(query: str, limit: int = 5, prefetch_limit: int = 20) -> list[Source]:
-    result = get_qdrant_client().query_points(
+def query_hybrid_points(query: str, limit: int = 5, prefetch_limit: int = 20):
+    return get_qdrant_client().query_points(
         collection_name=COLLECTION_NAME,
         prefetch=[
             models.Prefetch(
@@ -76,6 +76,10 @@ def hybrid_search(query: str, limit: int = 5, prefetch_limit: int = 20) -> list[
         with_payload=True,
     )
 
+
+def hybrid_search(query: str, limit: int = 5, prefetch_limit: int = 20) -> list[Source]:
+    result = query_hybrid_points(query, limit=limit, prefetch_limit=prefetch_limit)
+
     sources = []
     for hit in result.points:
         payload = hit.payload or {}
@@ -90,6 +94,25 @@ def hybrid_search(query: str, limit: int = 5, prefetch_limit: int = 20) -> list[
             )
         )
     return sources
+
+
+def retrieve_chunks(query: str, limit: int = 5, prefetch_limit: int = 20) -> list[RetrievedChunk]:
+    result = query_hybrid_points(query, limit=limit, prefetch_limit=prefetch_limit)
+
+    chunks = []
+    for hit in result.points:
+        payload = hit.payload or {}
+        text = str(payload.get("text") or payload.get("raw_text") or "")
+        chunks.append(
+            RetrievedChunk(
+                chunk_id=payload.get("chunk_id"),
+                source=payload.get("source"),
+                headings=payload.get("headings"),
+                score=hit.score,
+                text=text,
+            )
+        )
+    return chunks
 
 
 def format_sources_for_tool(sources: list[Source]) -> str:
