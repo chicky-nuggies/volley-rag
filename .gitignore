@@ -10,3 +10,11 @@ wheels/
 .venv
 .env
 .DS_Store
+
+# Local LangGraph checkpoints
+checkpoints/
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
