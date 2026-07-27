@@ -23,16 +23,17 @@ Guidelines:
 """
 
 
-@tool
-def search_volleyball_rules(query: str) -> str:
+@tool(response_format="content_and_artifact")
+def search_volleyball_rules(query: str) -> tuple[str, list[dict]]:
     """Search official volleyball rules context for a user question."""
     with trace_retrieval("agent-rule-retrieval", query) as observation:
         sources = hybrid_search(query)
+        source_data = [source.model_dump() for source in sources]
         observation.update(
-            output=[source.model_dump() for source in sources],
+            output=source_data,
             metadata={"resultCount": len(sources)},
         )
-    return format_sources_for_tool(sources)
+    return format_sources_for_tool(sources), source_data
 
 
 async def setup_checkpointer(checkpointer: AsyncSqliteSaver) -> None:

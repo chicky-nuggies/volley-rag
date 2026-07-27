@@ -5,6 +5,7 @@ from pathlib import Path
 import uuid
 
 from fastapi import FastAPI
+from langchain_core.messages import ToolMessage
 from starlette.concurrency import run_in_threadpool
 
 from app.agent import build_agent, setup_checkpointer
@@ -13,10 +14,9 @@ from app.observability import (
     initialize_langfuse,
     shutdown_langfuse,
     trace_chat,
-    trace_retrieval,
 )
-from app.rag import hybrid_search, retrieve_chunks
-from app.schemas import ChatRequest, ChatResponse, RetrieveRequest, RetrieveResponse
+from app.rag import retrieve_chunks
+from app.schemas import ChatRequest, ChatResponse, RetrieveRequest, RetrieveResponse, Source
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 
@@ -62,6 +62,16 @@ def log_tool_calls(agent_result: dict) -> None:
         )
 
 
+def extract_sources(agent_result: dict) -> list[Source]:
+    for message in reversed(agent_result.get("messages", [])):
+        if not isinstance(message, ToolMessage):
+            continue
+        if message.name != "search_volleyball_rules" or not message.artifact:
+            continue
+        return [Source.model_validate(source) for source in message.artifact]
+    return []
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     CHECKPOINT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -92,15 +102,6 @@ def health_check() -> dict[str, str]:
 async def chat(request: ChatRequest) -> ChatResponse:
     request_id = str(uuid.uuid4())
     with trace_chat(request.message, request_id) as (chat_observation, trace_id):
-        with trace_retrieval(
-            "response-source-retrieval", request.message
-        ) as retrieval_observation:
-            sources = await run_in_threadpool(hybrid_search, request.message)
-            retrieval_observation.update(
-                output=[source.model_dump() for source in sources],
-                metadata={"resultCount": len(sources)},
-            )
-
         agent_result = await app.state.chat_agent.ainvoke(
             {"messages": [{"role": "user", "content": request.message}]},
             config={
@@ -110,6 +111,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         )
         log_tool_calls(agent_result)
         answer = extract_answer(agent_result)
+        sources = extract_sources(agent_result)
         chat_observation.update(output=answer)
 
     logger.info("Chat trace: request_id=%s trace_id=%s", request_id, trace_id)

@@ -50,9 +50,9 @@ The chat endpoint expects:
 ## Langfuse tracing
 
 The `/chat` endpoint sends one trace per request to Langfuse. Each trace includes
-the user question, answer, LangGraph and model calls, tool calls, and both rule
-retrievals used by the endpoint. The standalone `/retrieve` endpoint is not
-traced.
+the user question, answer, LangGraph and model calls, tool calls, and rule
+retrieval when the agent calls the search tool. The standalone `/retrieve`
+endpoint is not traced.
 
 Add your Langfuse project credentials to `.env`:
 

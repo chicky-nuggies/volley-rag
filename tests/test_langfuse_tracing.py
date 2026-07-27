@@ -3,6 +3,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
+from langchain_core.messages import AIMessage, ToolMessage
+
 from app import agent, main, observability
 from app.schemas import ChatRequest, RetrievedChunk, RetrieveRequest, Source
 
@@ -16,7 +18,7 @@ class RecordingObservation:
 
 
 class ChatTracingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_chat_traces_request_retrieval_and_agent(self) -> None:
+    async def test_chat_uses_sources_from_agent_tool_artifact(self) -> None:
         source = Source(
             chunk_id="rule-1",
             source="rules.pdf",
@@ -25,7 +27,6 @@ class ChatTracingTests(unittest.IsolatedAsyncioTestCase):
             preview="A team has three hits.",
         )
         chat_observation = RecordingObservation()
-        retrieval_observation = RecordingObservation()
         trace_calls = []
 
         @contextmanager
@@ -33,14 +34,19 @@ class ChatTracingTests(unittest.IsolatedAsyncioTestCase):
             trace_calls.append(("chat", message, request_id))
             yield chat_observation, "trace-123"
 
-        @contextmanager
-        def fake_trace_retrieval(name: str, query: str):
-            trace_calls.append((name, query))
-            yield retrieval_observation
-
         fake_agent = SimpleNamespace(
             ainvoke=AsyncMock(
-                return_value={"messages": [SimpleNamespace(content="Three hits.")]}
+                return_value={
+                    "messages": [
+                        ToolMessage(
+                            content="Retrieved rules",
+                            artifact=[source.model_dump()],
+                            name="search_volleyball_rules",
+                            tool_call_id="call-1",
+                        ),
+                        AIMessage(content="Three hits."),
+                    ]
+                }
             )
         )
         main.app.state.chat_agent = fake_agent
@@ -48,31 +54,14 @@ class ChatTracingTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("app.main.uuid.uuid4", return_value="request-123"),
             patch("app.main.trace_chat", fake_trace_chat),
-            patch("app.main.trace_retrieval", fake_trace_retrieval),
             patch("app.main.create_langfuse_handler", return_value="handler"),
-            patch("app.main.run_in_threadpool", AsyncMock(return_value=[source])),
         ):
             response = await main.chat(ChatRequest(message="How many hits?"))
 
         self.assertEqual(response.answer, "Three hits.")
         self.assertEqual(response.sources, [source])
-        self.assertEqual(
-            trace_calls,
-            [
-                ("chat", "How many hits?", "request-123"),
-                ("response-source-retrieval", "How many hits?"),
-            ],
-        )
+        self.assertEqual(trace_calls, [("chat", "How many hits?", "request-123")])
         self.assertEqual(chat_observation.updates, [{"output": "Three hits."}])
-        self.assertEqual(
-            retrieval_observation.updates,
-            [
-                {
-                    "output": [source.model_dump()],
-                    "metadata": {"resultCount": 1},
-                }
-            ],
-        )
         fake_agent.ainvoke.assert_awaited_once_with(
             {"messages": [{"role": "user", "content": "How many hits?"}]},
             config={
@@ -80,6 +69,29 @@ class ChatTracingTests(unittest.IsolatedAsyncioTestCase):
                 "configurable": {"thread_id": "request-123"},
             },
         )
+
+    async def test_chat_returns_no_sources_when_agent_does_not_retrieve(self) -> None:
+        chat_observation = RecordingObservation()
+
+        @contextmanager
+        def fake_trace_chat(message: str, request_id: str):
+            yield chat_observation, "trace-123"
+
+        main.app.state.chat_agent = SimpleNamespace(
+            ainvoke=AsyncMock(
+                return_value={"messages": [AIMessage(content="Hello!")]}
+            )
+        )
+
+        with (
+            patch("app.main.uuid.uuid4", return_value="request-123"),
+            patch("app.main.trace_chat", fake_trace_chat),
+            patch("app.main.create_langfuse_handler", return_value="handler"),
+        ):
+            response = await main.chat(ChatRequest(message="Hello"))
+
+        self.assertEqual(response.answer, "Hello!")
+        self.assertEqual(response.sources, [])
 
     async def test_retrieve_endpoint_does_not_start_tracing(self) -> None:
         chunk = RetrievedChunk(
@@ -92,10 +104,6 @@ class ChatTracingTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("app.main.trace_chat", side_effect=AssertionError("unexpected trace")),
-            patch(
-                "app.main.trace_retrieval",
-                side_effect=AssertionError("unexpected trace"),
-            ),
             patch("app.main.run_in_threadpool", AsyncMock(return_value=[chunk])) as run,
         ):
             response = await main.retrieve(RetrieveRequest(query="team hits", limit=3))
@@ -126,10 +134,11 @@ class ToolTracingTests(unittest.TestCase):
             patch("app.agent.trace_retrieval", fake_trace_retrieval),
             patch("app.agent.hybrid_search", return_value=[source]),
         ):
-            result = agent.search_volleyball_rules.func("team hits")
+            content, artifact = agent.search_volleyball_rules.func("team hits")
 
         self.assertEqual(trace_calls, [("agent-rule-retrieval", "team hits")])
-        self.assertIn("A team has three hits.", result)
+        self.assertIn("A team has three hits.", content)
+        self.assertEqual(artifact, [source.model_dump()])
         self.assertEqual(
             observation.updates,
             [
