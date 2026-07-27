@@ -39,7 +39,11 @@ curl -X POST http://127.0.0.1:8000/retrieve \
 
 The chat endpoint expects:
 
-- Ollama running locally with `gemma4:e2b` and `qwen3-embedding:0.6b`.
+- Ollama running locally with `qwen3-embedding:0.6b` for dense query embeddings.
+- `GENERATOR_BASE_URL`, `GENERATOR_API_KEY`, and `GENERATOR_MODEL` configured for
+  the generator LLM. For Vercel AI Gateway, use
+  `https://ai-gateway.vercel.sh/v1` and a fully qualified model ID such as
+  `anthropic/claude-sonnet-4.6`.
 - `QDRANT_API_KEY` and `QDRANT_ENDPOINT` set in `.env`.
 - The `volleyball_rules_hybrid` Qdrant collection already populated.
 

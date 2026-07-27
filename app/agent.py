@@ -1,4 +1,7 @@
+import os
+
 from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
 from langchain.tools import tool
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -30,8 +33,13 @@ async def setup_checkpointer(checkpointer: AsyncSqliteSaver) -> None:
 
 
 def build_agent(checkpointer: AsyncSqliteSaver):
+    generator = ChatOpenAI(
+        base_url=os.environ["GENERATOR_BASE_URL"],
+        api_key=os.environ["GENERATOR_API_KEY"],
+        model=os.environ["GENERATOR_MODEL"],
+    )
     return create_agent(
-        model="ollama:gemma4:e2b",
+        model=generator,
         tools=[search_volleyball_rules],
         system_prompt=SYSTEM_PROMPT,
         checkpointer=checkpointer,
