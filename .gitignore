@@ -19,5 +19,10 @@ checkpoints/
 *.db-shm
 *.db-wal
 
+# Generated PageIndex source checkout and indexed document workspace
+pageindex-setup/_pageindex_source/
+pageindex-setup/workspace/
+/pageindex-setup/*
+
 # agent skills
 .agents
