@@ -47,6 +47,29 @@ The chat endpoint expects:
 - `QDRANT_API_KEY` and `QDRANT_ENDPOINT` set in `.env`.
 - The `volleyball_rules_hybrid` Qdrant collection already populated.
 
+## Langfuse tracing
+
+The `/chat` endpoint sends one trace per request to Langfuse. Each trace includes
+the user question, answer, LangGraph and model calls, tool calls, and both rule
+retrievals used by the endpoint. The standalone `/retrieve` endpoint is not
+traced.
+
+Add your Langfuse project credentials to `.env`:
+
+```text
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+```
+
+Use the base URL for your Langfuse Cloud region or self-hosted deployment.
+Without valid Langfuse credentials, tracing becomes a no-op and the chatbot
+continues to work.
+
+Trace payloads contain full user questions, model prompts and answers, and the
+retrieved rule previews shown to the model. Do not send sensitive information
+unless the configured Langfuse deployment is approved to store it.
+
 ## Run the Gradio chat UI
 
 Start the API first:

@@ -8,6 +8,13 @@ from fastapi import FastAPI
 from starlette.concurrency import run_in_threadpool
 
 from app.agent import build_agent, setup_checkpointer
+from app.observability import (
+    create_langfuse_handler,
+    initialize_langfuse,
+    shutdown_langfuse,
+    trace_chat,
+    trace_retrieval,
+)
 from app.rag import hybrid_search, retrieve_chunks
 from app.schemas import ChatRequest, ChatResponse, RetrieveRequest, RetrieveResponse
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -58,10 +65,14 @@ def log_tool_calls(agent_result: dict) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     CHECKPOINT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    async with AsyncSqliteSaver.from_conn_string(str(CHECKPOINT_DB_PATH)) as checkpointer:
-        await setup_checkpointer(checkpointer)
-        app.state.chat_agent = build_agent(checkpointer)
-        yield
+    initialize_langfuse()
+    try:
+        async with AsyncSqliteSaver.from_conn_string(str(CHECKPOINT_DB_PATH)) as checkpointer:
+            await setup_checkpointer(checkpointer)
+            app.state.chat_agent = build_agent(checkpointer)
+            yield
+    finally:
+        shutdown_langfuse()
 
 
 app = FastAPI(title="Volley RAG API", lifespan=lifespan)
@@ -79,13 +90,30 @@ def health_check() -> dict[str, str]:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
-    sources = await run_in_threadpool(hybrid_search, request.message)
-    agent_result = await app.state.chat_agent.ainvoke(
-        {"messages": [{"role": "user", "content": request.message}]},
-        config={"configurable": {"thread_id": str(uuid.uuid4())}},
-    )
-    log_tool_calls(agent_result)
-    return ChatResponse(answer=extract_answer(agent_result), sources=sources)
+    request_id = str(uuid.uuid4())
+    with trace_chat(request.message, request_id) as (chat_observation, trace_id):
+        with trace_retrieval(
+            "response-source-retrieval", request.message
+        ) as retrieval_observation:
+            sources = await run_in_threadpool(hybrid_search, request.message)
+            retrieval_observation.update(
+                output=[source.model_dump() for source in sources],
+                metadata={"resultCount": len(sources)},
+            )
+
+        agent_result = await app.state.chat_agent.ainvoke(
+            {"messages": [{"role": "user", "content": request.message}]},
+            config={
+                "callbacks": [create_langfuse_handler()],
+                "configurable": {"thread_id": request_id},
+            },
+        )
+        log_tool_calls(agent_result)
+        answer = extract_answer(agent_result)
+        chat_observation.update(output=answer)
+
+    logger.info("Chat trace: request_id=%s trace_id=%s", request_id, trace_id)
+    return ChatResponse(answer=answer, sources=sources)
 
 
 @app.post("/retrieve", response_model=RetrieveResponse)

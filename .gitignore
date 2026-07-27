@@ -18,3 +18,6 @@ checkpoints/
 *.db
 *.db-shm
 *.db-wal
+
+# agent skills
+.agents

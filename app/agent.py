@@ -5,6 +5,7 @@ from langchain_openai import ChatOpenAI
 from langchain.tools import tool
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+from app.observability import trace_retrieval
 from app.rag import format_sources_for_tool, hybrid_search
 
 
@@ -25,7 +26,13 @@ Guidelines:
 @tool
 def search_volleyball_rules(query: str) -> str:
     """Search official volleyball rules context for a user question."""
-    return format_sources_for_tool(hybrid_search(query))
+    with trace_retrieval("agent-rule-retrieval", query) as observation:
+        sources = hybrid_search(query)
+        observation.update(
+            output=[source.model_dump() for source in sources],
+            metadata={"resultCount": len(sources)},
+        )
+    return format_sources_for_tool(sources)
 
 
 async def setup_checkpointer(checkpointer: AsyncSqliteSaver) -> None:

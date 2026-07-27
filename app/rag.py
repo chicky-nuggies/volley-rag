@@ -2,14 +2,11 @@ import os
 from functools import lru_cache
 
 import ollama
-from dotenv import load_dotenv
 from fastembed import SparseTextEmbedding
 from qdrant_client import QdrantClient, models
 
 from app.schemas import RetrievedChunk, Source
 
-
-load_dotenv()
 
 COLLECTION_NAME = "volleyball_rules_hybrid"
 DENSE_VECTOR_NAME = "dense"
